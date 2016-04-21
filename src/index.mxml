@@ -1,0 +1,541 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:Application xmlns:fx="http://ns.adobe.com/mxml/2009" 
+			   xmlns:s="library://ns.adobe.com/flex/spark" 
+			   xmlns:mx="library://ns.adobe.com/flex/mx" 
+			   width="100%" height="100%" backgroundColor="#FFFFFF" color="#000000"
+			   creationComplete="application_creationCompleteHandler(event)" fontSize="14"
+			   fontWeight="bold" pageTitle="FlexHelpManager">
+	<fx:Style source="styles/estilos.css"/>
+	<fx:Script>
+		<![CDATA[
+			import model.vo.*;
+			
+			import mx.collections.ArrayCollection;
+			import mx.controls.Alert;
+			import mx.events.FlexEvent;
+			import mx.rpc.events.FaultEvent;
+			import mx.rpc.events.ResultEvent;
+			import mx.utils.ObjectUtil;
+			
+			import spark.events.IndexChangeEvent;
+			
+			private var cookie:SharedObject = SharedObject.getLocal('Dados');			
+			[Bindable]
+			private var bancosDados:ArrayCollection;
+			[Bindable]
+			private var tabelas:ArrayCollection;
+			[Bindable]
+			private var campos:ArrayCollection = new ArrayCollection;
+			[Bindable] 
+			private var confXML:XML;
+			[Bindable] 
+			public var comentarioTabela:String = "";
+			[Bindable] 
+			public var titulo:String = "FlexHelpManager - versão 3.74";
+			[Bindable] 
+			private var descricao:String = "Gerador de ajuda dos sistemas da IAutomate.";
+			[Bindable] 
+			public var ajudaTemp:ajuda = new ajuda();
+			[Bindable] 
+			public var ajudas:ArrayCollection = new ArrayCollection;
+			[Bindable] 
+			public var setores:ArrayCollection = new ArrayCollection;
+			
+			private var myFilter:FileFilter = new FileFilter("XML","*.xml");
+			private var fr:FileReference = new FileReference();
+			private var fo:FileReference = new FileReference();
+			private var fs:FileReference = new FileReference();
+			
+			[Bindable]
+			private var tabelaSelected:String = "";
+			
+			
+			protected function remote_faultHandler(event:FaultEvent):void
+			{
+				Alert.show("Code("+event.fault.errorID.toString(10)+"): "+event.fault.faultString + "\nDetalhes:"+ event.fault.faultDetail, "ERRO("+event.fault.faultCode+")");
+			}
+			protected function buttonTestar_clickHandler(event:MouseEvent):void
+			{
+				remote.openConexao(textInputUsuario.text,textInputSenha.text, textInputServidor.text, textInputPorta.text);
+			}
+			protected function openConexao_resultHandler(event:ResultEvent):void
+			{
+				Alert.show("Conexão realizada com sucesso !!!", "OK");
+			}
+			protected function buttonConectar_clickHandler(event:MouseEvent):void
+			{
+				if(checkBoxSalvar.selected)
+				{
+					cookie.data.usuario = textInputUsuario.text;
+					cookie.data.senha = textInputSenha.text;
+					cookie.data.servidor = textInputServidor.text;
+					cookie.data.porta = textInputPorta.text;
+					cookie.data.tabela = textInputAjuda.text;
+					cookie.flush();
+				}
+				else
+				{
+					cookie.clear();
+				}
+				remote.listarBancoDados(textInputUsuario.text,textInputSenha.text, textInputServidor.text, textInputPorta.text);
+			}
+			protected function listarBancoDados_resultHandler(event:ResultEvent):void
+			{
+				buttonBarNavegacao.visible = true;
+
+				textInputServidor.enabled = false;
+				textInputPorta.enabled = false;
+				textInputUsuario.enabled = false;
+				textInputSenha.enabled = false;
+				textInputAjuda.enabled = false;
+				checkBoxSalvar.enabled = false;
+				buttonTestar.enabled = false;
+				buttonConectar.enabled = false;
+				buttonDesconectar.enabled = true;
+				buttonExportar.enabled = true;
+				buttonImportar.enabled = false;
+				itemBancosDados.visible = true;
+				bancosDados = new ArrayCollection(event.result as Array);
+			}
+			protected function application_creationCompleteHandler(event:FlexEvent):void
+			{
+				if(cookie.data.hasOwnProperty('usuario') && cookie.data.hasOwnProperty('senha') && cookie.data.hasOwnProperty('servidor') && cookie.data.hasOwnProperty('porta'))
+				{
+					textInputUsuario.text = cookie.data.usuario; 
+					textInputSenha.text = cookie.data.senha;
+					textInputServidor.text = cookie.data.servidor; 
+					textInputPorta.text = cookie.data.porta;
+					textInputAjuda.text = cookie.data.tabela;
+					checkBoxSalvar.selected = true;
+				}
+			}
+			protected function buttonDesconectar_clickHandler(event:MouseEvent):void
+			{
+				buttonBarNavegacao.visible = false;
+				textInputServidor.enabled = true;
+				textInputPorta.enabled = true;
+				textInputUsuario.enabled = true;
+				textInputSenha.enabled = true;
+				textInputAjuda.enabled = true;
+				checkBoxSalvar.enabled = true;
+				buttonTestar.enabled = true;
+				buttonConectar.enabled = true;
+				buttonDesconectar.enabled = false;
+				buttonImportar.enabled = true;
+				buttonExportar.enabled = false;
+				itemBancosDados.visible = false;
+				itemTabelas.visible = false;
+				bancosDados = new ArrayCollection();
+				campos = new ArrayCollection();
+			}
+			protected function buttonListarTabelas_clickHandler():void
+			{
+				if(dropDownListBancos.selectedIndex != -1)
+				{
+					remote.listarTabelas(textInputUsuario.text,textInputSenha.text, textInputServidor.text, textInputPorta.text, dropDownListBancos.selectedItem.Database);
+				} else
+				{
+					Alert.show("Selecione um banco de dados !!!", "ERRO");
+				}
+			}
+			protected function listarTabelas_resultHandler(event:ResultEvent):void
+			{
+				itemTabelas.visible = true;
+				tabelas = new ArrayCollection(event.result as Array);
+				remoteAjuda.listar_setores(textInputUsuario.text,textInputSenha.text, textInputServidor.text, textInputPorta.text, dropDownListBancos.selectedItem.Database,textInputAjuda.text);
+			}
+			protected function listarsetores_resultHandler(event:ResultEvent):void
+			{
+				setores = new ArrayCollection(event.result as Array);
+				ajudaTemp = new ajuda();
+				ajudaTemp.HLPnId = 0;
+				ajudaTemp.HLPnCapitulo += 0.01;
+				ajudas = new ArrayCollection; 
+			}
+			protected function buttonListarCampos_clickHandler():void
+			{
+				if(dropDownListBancos.selectedIndex != -1)
+				{
+					tabelaSelected = dropDownListTabelas.selectedItem['Tables_in_'+dropDownListBancos.selectedItem.Database];
+					remote.listarCampos(textInputUsuario.text,textInputSenha.text, textInputServidor.text, textInputPorta.text, dropDownListBancos.selectedItem.Database, dropDownListTabelas.selectedItem['Tables_in_'+dropDownListBancos.selectedItem.Database]);
+				} else
+				{
+					Alert.show("Selecione uma tabela !!!", "ERRO");
+				}
+			}
+			protected function listarCampos_resultHandler(event:ResultEvent):void
+			{
+				campos = new ArrayCollection(event.result as Array);
+				remote.listarComentarioTabela(textInputUsuario.text,textInputSenha.text, textInputServidor.text, textInputPorta.text, dropDownListBancos.selectedItem.Database, dropDownListTabelas.selectedItem['Tables_in_'+dropDownListBancos.selectedItem.Database]);
+			}			
+			protected function listarComentarioTabela_resultHandler(event:ResultEvent):void
+			{
+				var obj:Object = event.result as Object;
+				comentarioTabela = obj.Comment;				
+			}
+			private function ucfirst(text:String):String
+			{
+				return text.slice(0, 1).toUpperCase()+text.slice(1, text.length).toLowerCase(); 
+			}
+			private function ucwords(text:String):String
+			{
+				var texts:Array = text.split(' ');
+				var final:String = '', inicial:String, restante:String;
+				for(var i:int=0; i<texts.length; i++)
+				{
+					if(i)
+						final += ' ';					
+					inicial = texts[i].slice(0, 1); 
+					restante = texts[i].slice(1, texts[i].length); 
+					final += inicial.toUpperCase()+restante.toLowerCase(); 
+				}
+				return final; 
+			}
+			private function tipoCampo(tipo:String):String
+			{
+				var type:Array = tipo.split('(');
+				var result:String;
+				if(type[0] == "int")
+				{
+					result = "int";
+				} else if(type[0] == "char" || type[0] == "varchar" || type[0] == "text"  || type[0] == "longtext" || type[0] == "set")
+				{
+					result = "String";
+				} else if(type[0] == "datetime" || type[0] == "date" || type[0] == "time")
+				{
+					result = "*";
+				} else if(type[0] == "double" || type[0] == "float")
+				{
+					result = "Number=0";
+				}
+				return(result);
+			}
+			protected function buttonExportar_clickHandler(event:MouseEvent):void
+			{
+				var dt:Date = new Date();
+				var strData:String = dt.fullYear.toString();
+				if((dt.month+1) < 10)
+					strData += "-0"+(dt.month+1);
+				else
+					strData += "-"+(dt.month+1);
+				if(dt.date < 10)
+					strData += "-0"+dt.date;
+				else
+					strData += "-"+dt.date;
+				var xmlExp:String = '<?xml version="1.0" encoding="ISO-8859-1"?>\n';
+				xmlExp += '<conf>\n';
+				xmlExp += '<conexao>\n';
+				xmlExp += '\t<server>'+textInputServidor.text+'</server>\n';
+				xmlExp += '\t<port>'+textInputPorta.text+'</port>\n';
+				xmlExp += '\t<user>'+textInputUsuario.text+'</user>\n';
+				xmlExp += '\t<password>'+textInputSenha.text+'</password>\n';
+				xmlExp += '\t<table>'+textInputAjuda.text+'</table>\n';
+				xmlExp += '\t<save>'+checkBoxSalvar.selected+'</save>\n';
+				xmlExp += '</conexao>\n';
+				xmlExp += '</conf>';
+				fs.save(xmlExp, "FlexPHPBDtoVO_"+strData+"_Conf.xml");
+			}
+			
+			protected function buttonImportar_clickHandler(event:MouseEvent):void 
+			{
+				fo.browse([myFilter]);
+				fo.addEventListener(Event.SELECT,onFileSelect);
+				fo.addEventListener(Event.COMPLETE,onFileComplete);			
+			}
+			private function onFileSelect(event:Event):void
+			{
+				fo.load();
+			}
+			private function onFileComplete(event:Event):void
+			{ 	
+				confXML = XML(fo.data.readUTFBytes(fo.data.length));
+				textInputServidor.text = confXML.conexao[0].server;
+				textInputPorta.text = confXML.conexao[0].port;
+				textInputUsuario.text = confXML.conexao[0].user;
+				textInputSenha.text = confXML.conexao[0].password;
+				textInputAjuda.text = confXML.conexao[0].tabela;
+				checkBoxSalvar.selected = confXML.conexao[0].save;
+				Alert.show("As configurações foram importadas com sucesso !!!", "AVISO");				
+			}
+			
+			protected function buttonSaveComment_clickHandler(event:MouseEvent):void
+			{
+				var cps:Array = new Array();
+				for(var i:int=0; i<campos.length; i++)
+				{
+					var obj:String = "";
+					obj += campos[i].Comment+"|";
+					obj += campos[i].Type+"|";
+					obj += campos[i].Field+"|";
+					obj += campos[i].Extra;
+					cps.push(obj);
+				}
+				remote.salvarComentario(textInputUsuario.text,textInputSenha.text, textInputServidor.text, textInputPorta.text, dropDownListBancos.selectedItem.Database, dropDownListTabelas.selectedItem['Tables_in_'+dropDownListBancos.selectedItem.Database], cps);
+			}
+			protected function salvarComentario_resultHandler(event:ResultEvent):void
+			{
+				if(event.result)
+					Alert.show("Os comentários foram salvos com sucesso !!!", "AVISO");
+				else
+					Alert.show("Os comentários não foram salvos com sucesso !!!", "ERRO");
+			}	
+			protected function buttonSaveCommentTable_clickHandler(event:MouseEvent):void
+			{
+				remote.salvarComentarioTabela(textInputUsuario.text,textInputSenha.text, textInputServidor.text, textInputPorta.text, dropDownListBancos.selectedItem.Database, dropDownListTabelas.selectedItem['Tables_in_'+dropDownListBancos.selectedItem.Database], comentarioTabela);
+			}
+			protected function salvarComentarioTabela_resultHandler(event:ResultEvent):void
+			{
+				if(event.result)
+					Alert.show("O comentário foi salvo com sucesso !!!", "AVISO");
+				else
+					Alert.show("O comentário não foi salvo com sucesso !!!", "ERRO");
+			}	
+			
+			protected function buttonSaveForm_clickHandler(event:MouseEvent):void
+			{
+				if(checkBoxExibir.selected)
+					ajudaTemp.HLPbExibir = 'Y';
+				else
+					ajudaTemp.HLPbExibir = 'N';
+				if(ajudaTemp.HLPnId != 0)
+				{
+					remoteAjuda.editar(textInputUsuario.text,textInputSenha.text, textInputServidor.text, textInputPorta.text, dropDownListBancos.selectedItem.Database,textInputAjuda.text, ajudaTemp);
+				} else
+				{
+					remoteAjuda.inserir(textInputUsuario.text,textInputSenha.text, textInputServidor.text, textInputPorta.text, dropDownListBancos.selectedItem.Database,textInputAjuda.text, ajudaTemp);
+				}
+			}
+			protected function buttonDeleteForm_clickHandler(event:MouseEvent):void
+			{
+				remoteAjuda.excluir(textInputUsuario.text,textInputSenha.text, textInputServidor.text, textInputPorta.text, dropDownListBancos.selectedItem.Database,textInputAjuda.text, ajudaTemp.HLPnId);
+			}
+			protected function listar_resultHandler(event:ResultEvent):void
+			{
+				ajudas = new ArrayCollection(event.result as Array);
+			}
+			protected function inserir_resultHandler(event:ResultEvent):void
+			{
+				Alert.show("Ajuda inserida com sucesso !!!", "AVISO");
+				remoteAjuda.listar_setores(textInputUsuario.text,textInputSenha.text, textInputServidor.text, textInputPorta.text, dropDownListBancos.selectedItem.Database, textInputAjuda.text);
+			}
+			protected function editar_resultHandler(event:ResultEvent):void
+			{
+				Alert.show("Ajuda editada com sucesso !!!", "AVISO");
+				remoteAjuda.listar_setores(textInputUsuario.text,textInputSenha.text, textInputServidor.text, textInputPorta.text, dropDownListBancos.selectedItem.Database, textInputAjuda.text);
+			}
+			protected function excluir_resultHandler(event:ResultEvent):void
+			{
+				Alert.show("Ajuda excluida com sucesso !!!", "AVISO");
+				remoteAjuda.listar_setores(textInputUsuario.text,textInputSenha.text, textInputServidor.text, textInputPorta.text, dropDownListBancos.selectedItem.Database, textInputAjuda.text);
+			}
+			
+			protected function dropDownListSetor_changeHandler(event:IndexChangeEvent):void
+			{
+				ajudaTemp = new ajuda();
+				remoteAjuda.listar(textInputUsuario.text,textInputSenha.text, textInputServidor.text, textInputPorta.text, dropDownListBancos.selectedItem.Database, textInputAjuda.text, dropDownListSetor.selectedItem.HLPsSetor);
+			}
+			
+			protected function dropDownListAjuda_changeHandler(event:IndexChangeEvent):void
+			{
+				ajudaTemp = dropDownListAjuda.selectedItem as ajuda;
+				if(ajudaTemp.HLPbExibir == 'Y')
+					checkBoxExibir.selected = true;
+				else
+					checkBoxExibir.selected = false;
+			}
+			
+			protected function buttonNewForm_clickHandler(event:MouseEvent):void
+			{
+				ajudaTemp = new ajuda();
+			}
+			private function formatAjuda(item:Object):String
+			{
+				return("("+item['HLPnCapitulo'].toString()+") "+item['HLPsTitulo']);
+			}
+		]]>
+	</fx:Script>
+	<fx:Declarations>
+		<s:RemoteObject endpoint="php/amf/index.php" 
+						id="remote" 
+						source="PHPBDService" 
+						destination="PHPBDService"
+						showBusyCursor="true"
+						fault="remote_faultHandler(event)">
+			<s:method name="openConexao" result="openConexao_resultHandler(event)"/>
+			<s:method name="listarBancoDados" result="listarBancoDados_resultHandler(event)"/>
+			<s:method name="listarTabelas" result="listarTabelas_resultHandler(event)"/>
+			<s:method name="listarComentarioTabela" result="listarComentarioTabela_resultHandler(event)"/>
+			<s:method name="listarCampos" result="listarCampos_resultHandler(event)"/>
+			<s:method name="salvarComentario" result="salvarComentario_resultHandler(event)"/>
+			<s:method name="salvarComentarioTabela" result="salvarComentarioTabela_resultHandler(event)"/>
+		</s:RemoteObject>
+		<s:RemoteObject endpoint="php/amf/index.php" 
+						id="remoteAjuda" 
+						source="ajudas" 
+						destination="ajudas"
+						showBusyCursor="true"
+						fault="remote_faultHandler(event)">
+			<s:method name="listar_setores" result="listarsetores_resultHandler(event)"/>
+			<s:method name="listar" result="listar_resultHandler(event)"/>
+			<s:method name="inserir" result="inserir_resultHandler(event)"/>
+			<s:method name="editar" result="editar_resultHandler(event)"/>
+			<s:method name="excluir" result="excluir_resultHandler(event)"/>
+		</s:RemoteObject>
+	</fx:Declarations>
+	<s:controlBarContent>
+		<mx:HBox width="100%" verticalAlign="middle" horizontalAlign="center">
+			<s:Image id="imageLogo" source="@Embed(source='assets/icon_048.png')"/>
+			<mx:VBox>
+				<s:Label text="{titulo}"
+						 fontSize="18" />
+				<s:Label text="{descricao}" 
+						 fontSize="12" />
+			</mx:VBox>
+		</mx:HBox>
+	</s:controlBarContent>
+	<s:VGroup width="100%" height="100%" paddingBottom="10" paddingLeft="10" paddingRight="10" paddingTop="10" horizontalAlign="center">
+		<mx:LinkBar id="buttonBarNavegacao" dataProvider="{nav}" visible="false"/>
+		<mx:ViewStack id="nav" width="100%" height="100%">
+			<mx:VBox width="100%" height="100%"  label="CONEXÃO" icon="@Embed(source='assets/connect_established-024.png')">
+				<mx:Form width="100%" height="30%">
+					<mx:FormItem label="Servidor:">
+						<s:TextInput id="textInputServidor" width="400"/>
+					</mx:FormItem>
+					<mx:FormItem label="Porta:">
+						<s:TextInput id="textInputPorta" width="50"/>
+					</mx:FormItem>
+					<mx:FormItem label="Usuário do Banco de Dados:">
+						<s:TextInput id="textInputUsuario" width="250"/>
+					</mx:FormItem>
+					<mx:FormItem label="Senha do Banco de Dados:">
+						<s:TextInput id="textInputSenha" width="250"/>
+					</mx:FormItem>
+					<mx:FormItem label="Tabela de Ajuda:">
+						<s:TextInput id="textInputAjuda" width="250"/>
+					</mx:FormItem>
+					<mx:FormItem label="Salvar ?">
+						<s:CheckBox id="checkBoxSalvar"/>
+					</mx:FormItem>
+					<mx:FormItem id="itemBancosDados" label="Bancos de Dados:" visible="false">
+						<mx:HBox>
+							<s:DropDownList id="dropDownListBancos" width="250" height="27"
+											change="buttonListarTabelas_clickHandler()"
+											dataProvider="{bancosDados}" labelField="Database"/>
+							<s:Button id="buttonListarBanco" label="Atualizar"
+									  icon="@Embed(source='assets/agt_reload-024.png')" click="buttonListarTabelas_clickHandler()"/>					
+						</mx:HBox>
+					</mx:FormItem>
+					<mx:FormItem id="itemTabelas" label="Tabelas:" visible="false">
+						<mx:HBox>
+							<s:DropDownList id="dropDownListTabelas" width="250" height="27"
+											change="buttonListarCampos_clickHandler()"
+											dataProvider="{tabelas}" 
+											labelField="{'Tables_in_'+dropDownListBancos.selectedItem.Database}"/>
+							<s:Button id="buttonListarTabelas" label="Atualizar"
+									  icon="@Embed(source='assets/agt_reload-024.png')" click="buttonListarCampos_clickHandler()"/>					
+						</mx:HBox>
+					</mx:FormItem>
+				</mx:Form>
+				<mx:HBox width="100%">
+					<s:Button id="buttonImportar" label="IMPORTAR" enabled="true" icon="@Embed(source='assets/db_update-024.png')" 
+							  click="buttonImportar_clickHandler(event)"/>
+					<s:Button id="buttonTestar" label="TESTAR" enabled="true" icon="@Embed(source='assets/ok-024.png')"
+							  click="buttonTestar_clickHandler(event)"/>
+					<s:Button id="buttonConectar" label="CONECTAR" enabled="true" icon="@Embed(source='assets/connect_established-024.png')"
+							  click="buttonConectar_clickHandler(event)"/>
+					<s:Button id="buttonExportar" label="EXPORTAR" enabled="false" icon="@Embed(source='assets/db_comit-024.png')"
+							  click="buttonExportar_clickHandler(event)"/>
+					<mx:Spacer width="100%" height="20"/>
+					<s:Button id="buttonDesconectar" label="DESCONECTAR" enabled="false" icon="@Embed(source='assets/connect_no-024.png')"
+							  click="buttonDesconectar_clickHandler(event)"/>
+				</mx:HBox>
+				<mx:VBox id="viewCampos" width="100%" height="100%">
+					<mx:DataGrid id="dataGridCamposList" dataProvider="{campos}" height="100%" width="100%" allowMultipleSelection="true">
+						<mx:columns>
+							<mx:DataGridColumn headerText="Campo" dataField="Field"/>
+							<mx:DataGridColumn headerText="Tipo" dataField="Type"/>
+							<mx:DataGridColumn headerText="Padrão" dataField="Default"/>
+							<mx:DataGridColumn headerText="Extra" dataField="Extra"/>
+							<mx:DataGridColumn headerText="Nulo" dataField="Null"/>
+							<mx:DataGridColumn headerText="Collation" dataField="Collation"/>
+							<mx:DataGridColumn headerText="Comentário" dataField="Comment"/>
+						</mx:columns>
+					</mx:DataGrid>
+				</mx:VBox>
+			</mx:VBox>
+			<mx:VBox label="AJUDA: FIELDS TIPS " width="100%" height="100%" icon="@Embed(source='assets/rows-024.png')">
+				<s:Label text="Banco de Dados: {dropDownListBancos.selectedItem.Database}   |   Tabela: {tabelaSelected}" width="100%"/>
+				<mx:DataGrid id="dataGridCampos" dataProvider="{campos}" 
+							 height="100%" width="100%" editable="true">
+					<mx:columns>
+						<mx:DataGridColumn headerText="Campo" dataField="Field" width="120" editable="false"/>
+						<mx:DataGridColumn headerText="Tipo" dataField="Type" width="120" editable="false"/>
+						<mx:DataGridColumn headerText="Comentário" dataField="Comment"/>
+					</mx:columns>
+				</mx:DataGrid>
+				<s:Button id="buttonSaveComment" label="SALVAR" enabled="{campos.length != 0}"
+						  icon="@Embed(source='assets/filesave-024.png')" click="buttonSaveComment_clickHandler(event)"/>
+			</mx:VBox>			
+			<mx:VBox label="AJUDA: TABLE TIPS" width="100%" height="100%" icon="@Embed(source='assets/db-024.png')">
+				<s:Label text="Banco de Dados: {dropDownListBancos.selectedItem.Database}   |   Tabela: {tabelaSelected}" width="100%"/>
+				<s:Form width="100%" height="100%">
+					<mx:FormItem label="Comentário da Tabela:" width="100%" height="100%">
+						<mx:TextArea id="textAreaComentarioTabela" text="@{comentarioTabela}" width="100%" height="100%"/>
+					</mx:FormItem>
+				</s:Form>
+				<s:Button id="buttonSaveCommentTable" label="SALVAR" enabled="{tabelaSelected != ''}"
+						  icon="@Embed(source='assets/filesave-024.png')" click="buttonSaveCommentTable_clickHandler(event)"/>
+			</mx:VBox>			
+			<mx:VBox label="AJUDA: FORM" width="100%" height="100%" icon="@Embed(source='assets/form-024.png')">
+				<s:Label text="Banco de Dados: {dropDownListBancos.selectedItem.Database}   |   Tabela: " width="100%"/>
+				<mx:HBox width="100%" verticalAlign="middle">
+					<s:Label text="Setor:"/>
+					<s:DropDownList id="dropDownListSetor" dataProvider="{setores}" labelField="HLPsSetor"
+									width="200" change="dropDownListSetor_changeHandler(event)"/>
+					<s:Label text="Ajuda:"/>
+					<s:DropDownList id="dropDownListAjuda" dataProvider="{ajudas}"
+									change="dropDownListAjuda_changeHandler(event)"
+									width="700" labelFunction="formatAjuda"/>
+				</mx:HBox>
+				<mx:Form width="100%" verticalScrollPolicy="auto" height="100%" >
+					<mx:FormItem label="Id:">
+						<mx:HBox verticalAlign="middle">
+							<s:TextInput id="textInputId" text="{ajudaTemp.HLPnId}" width="50" enabled="false"/>
+							<s:Spacer width="10" height="20"/>
+							<mx:Label text="Setor:"/>
+							<s:TextInput id="textInputSetor" text="@{ajudaTemp.HLPsSetor}" width="570"/>
+							<s:Spacer width="10" height="20"/>
+							<mx:Label text="Capítulo:"/>
+							<mx:NumericStepper id="numericStepperCapitulo" textAlign="center" stepSize="0.01" 
+											   width="100" value="@{ajudaTemp.HLPnCapitulo}"/>
+							<s:Spacer width="100%" height="20"/>
+							<mx:Label text="Exibir:"/>
+							<s:CheckBox id="checkBoxExibir"/>
+						</mx:HBox>
+					</mx:FormItem>
+					<mx:FormItem label="Título:">
+						<s:TextInput id="textInputTitulo" text="@{ajudaTemp.HLPsTitulo}" width="800"/>
+					</mx:FormItem>
+					<mx:FormItem label="Descrição:">
+						<mx:RichTextEditor id="textAreaDescricao"
+											htmlText="@{ajudaTemp.HLPsDescricao}" 
+											width="800" height="350"/>
+					</mx:FormItem>
+					<mx:FormItem label="Tags:">
+						<mx:HBox verticalAlign="middle">
+							<s:TextInput id="textInputTags" text="@{ajudaTemp.HLPsTags}" width="250"/>
+							<s:Label text="Video Tutorial:"/>
+							<s:TextInput id="textInputVideoTutorial" width="500"/>
+						</mx:HBox>
+					</mx:FormItem>
+				</mx:Form>
+				<mx:HBox width="100%">
+					<s:Button id="buttonNewForm" label="NOVO" icon="@Embed(source='assets/filenew-024.png')" click="buttonNewForm_clickHandler(event)"/>
+					<s:Button id="buttonSaveForm" label="SALVAR" icon="@Embed(source='assets/filesave-024.png')" click="buttonSaveForm_clickHandler(event)"/>
+					<s:Spacer width="100%" height="20"/>
+					<s:Button id="buttonDeleteForm" label="EXCLUIR" icon="@Embed(source='assets/button_cancel-024.png')" click="buttonDeleteForm_clickHandler(event)"/>					
+				</mx:HBox>
+			</mx:VBox>			
+		</mx:ViewStack>
+	</s:VGroup>
+</s:Application>

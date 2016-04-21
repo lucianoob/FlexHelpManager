@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<conf>
+<conexao>
+	<file>ErpConexaoService</file>
+	<as_package>model.vo</as_package>
+	<alias>vo</alias>
+	<server>localhost</server>
+	<port>3306</port>
+	<user>jhsobrinho</user>
+	<password>jhs270910</password>
+	<save>true</save>
+</conexao>
+</conf>
